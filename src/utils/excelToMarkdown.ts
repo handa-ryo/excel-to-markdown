@@ -1,10 +1,17 @@
 import * as XLSX from 'xlsx';
 import { parseDrawingsFromBuffer } from './parseDrawings';
 import { drawingToMermaid } from './drawingToMermaid';
+import { parseStylesFromBuffer } from './parseStyles';
+
+export interface CellData {
+  value: string;
+  bold: boolean;
+  italic: boolean;
+}
 
 export interface SheetData {
   name: string;
-  rows: string[][];
+  rows: CellData[][];
   mermaid?: string;
 }
 
@@ -14,18 +21,32 @@ export interface WorkbookData {
 
 export async function parseExcel(file: File): Promise<WorkbookData> {
   const buffer = await file.arrayBuffer();
-  const [workbook, drawingMap] = await Promise.all([
-    Promise.resolve(XLSX.read(buffer, { type: 'array' })),
+  const [workbook, drawingMap, styleMap] = await Promise.all([
+    Promise.resolve(XLSX.read(buffer, { type: 'array', cellStyles: true })),
     parseDrawingsFromBuffer(buffer),
+    parseStylesFromBuffer(buffer),
   ]);
 
   const sheets: SheetData[] = workbook.SheetNames.map((name, idx) => {
     const sheet = workbook.Sheets[name];
-    const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      defval: '',
-      raw: false,
-    }) as string[][];
+    const rows: CellData[][] = [];
+
+    const ref = sheet['!ref'];
+    if (ref) {
+      const range = XLSX.utils.decode_range(ref);
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        const row: CellData[] = [];
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const cell = sheet[addr];
+          const value = cell ? (XLSX.utils.format_cell(cell) ?? '') : '';
+          const styleIdx = typeof cell?.s === 'number' ? cell.s : 0;
+          const font = styleMap.get(styleIdx) ?? { bold: false, italic: false };
+          row.push({ value, bold: font.bold, italic: font.italic });
+        }
+        rows.push(row);
+      }
+    }
 
     const drawing = drawingMap.get(idx);
     const mermaid = drawing ? drawingToMermaid(drawing) : undefined;
@@ -36,17 +57,25 @@ export async function parseExcel(file: File): Promise<WorkbookData> {
   return { sheets };
 }
 
-export function sheetToMarkdown(rows: string[][]): string {
+function formatCell(cell: CellData): string {
+  let text = cell.value.replace(/\|/g, '\\|').replace(/\*/g, '\\*');
+  if (cell.bold && cell.italic) return `***${text}***`;
+  if (cell.bold) return `**${text}**`;
+  if (cell.italic) return `*${text}*`;
+  return text;
+}
+
+export function sheetToMarkdown(rows: CellData[][]): string {
   if (rows.length === 0) return '';
 
-  const nonEmptyRows = rows.filter((row) => row.some((cell) => String(cell).trim() !== ''));
+  const nonEmptyRows = rows.filter((row) => row.some((c) => c.value.trim() !== ''));
   if (nonEmptyRows.length === 0) return '';
 
   const maxCols = Math.max(...nonEmptyRows.map((row) => row.length));
   const normalized = nonEmptyRows.map((row) => {
     const padded = [...row];
-    while (padded.length < maxCols) padded.push('');
-    return padded.map((cell) => String(cell).replace(/\|/g, '\\|'));
+    while (padded.length < maxCols) padded.push({ value: '', bold: false, italic: false });
+    return padded.map(formatCell);
   });
 
   const header = normalized[0];
