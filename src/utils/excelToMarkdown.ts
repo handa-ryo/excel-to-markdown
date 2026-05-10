@@ -1,8 +1,11 @@
 import * as XLSX from 'xlsx';
+import { parseDrawingsFromBuffer } from './parseDrawings';
+import { drawingToMermaid } from './drawingToMermaid';
 
 export interface SheetData {
   name: string;
   rows: string[][];
+  mermaid?: string;
 }
 
 export interface WorkbookData {
@@ -11,16 +14,23 @@ export interface WorkbookData {
 
 export async function parseExcel(file: File): Promise<WorkbookData> {
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  const [workbook, drawingMap] = await Promise.all([
+    Promise.resolve(XLSX.read(buffer, { type: 'array' })),
+    parseDrawingsFromBuffer(buffer),
+  ]);
 
-  const sheets: SheetData[] = workbook.SheetNames.map((name) => {
+  const sheets: SheetData[] = workbook.SheetNames.map((name, idx) => {
     const sheet = workbook.Sheets[name];
     const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: '',
       raw: false,
     }) as string[][];
-    return { name, rows };
+
+    const drawing = drawingMap.get(idx);
+    const mermaid = drawing ? drawingToMermaid(drawing) : undefined;
+
+    return { name, rows, mermaid };
   });
 
   return { sheets };
@@ -53,9 +63,19 @@ export function generateMarkdown(workbookData: WorkbookData, selectedSheets: str
 
   for (const sheet of workbookData.sheets) {
     if (!selectedSheets.includes(sheet.name)) continue;
+
+    const sectionParts: string[] = [];
+
     const table = sheetToMarkdown(sheet.rows);
-    if (!table) continue;
-    parts.push(`## ${sheet.name}\n\n${table}`);
+    if (table) sectionParts.push(table);
+
+    if (sheet.mermaid) {
+      sectionParts.push(`\`\`\`mermaid\n${sheet.mermaid}\n\`\`\``);
+    }
+
+    if (sectionParts.length > 0) {
+      parts.push(`## ${sheet.name}\n\n${sectionParts.join('\n\n')}`);
+    }
   }
 
   return parts.join('\n\n');
