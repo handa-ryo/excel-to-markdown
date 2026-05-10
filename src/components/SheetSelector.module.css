@@ -1,0 +1,32 @@
+.container {
+  margin: 16px 0;
+}
+
+.label {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #fff;
+  font-size: 0.9rem;
+}
+
+.item:hover {
+  background: #f0f6ff;
+  border-color: #4a90e2;
+}
