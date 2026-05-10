@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { parseDrawingsFromBuffer } from './parseDrawings';
 import { drawingToMermaid } from './drawingToMermaid';
-import { parseStylesFromBuffer } from './parseStyles';
+import { parseStylesFromBuffer, parseCellStyleIndices } from './parseStyles';
 
 export interface CellData {
   value: string;
@@ -21,15 +21,17 @@ export interface WorkbookData {
 
 export async function parseExcel(file: File): Promise<WorkbookData> {
   const buffer = await file.arrayBuffer();
-  const [workbook, drawingMap, styleMap] = await Promise.all([
-    Promise.resolve(XLSX.read(buffer, { type: 'array', cellStyles: true })),
+  const [workbook, drawingMap, styleMap, cellStyleMap] = await Promise.all([
+    Promise.resolve(XLSX.read(buffer, { type: 'array' })),
     parseDrawingsFromBuffer(buffer),
     parseStylesFromBuffer(buffer),
+    parseCellStyleIndices(buffer),
   ]);
 
   const sheets: SheetData[] = workbook.SheetNames.map((name, idx) => {
     const sheet = workbook.Sheets[name];
     const rows: CellData[][] = [];
+    const sheetStyleIndices = cellStyleMap.get(idx) ?? new Map<string, number>();
 
     const ref = sheet['!ref'];
     if (ref) {
@@ -40,7 +42,7 @@ export async function parseExcel(file: File): Promise<WorkbookData> {
           const addr = XLSX.utils.encode_cell({ r, c });
           const cell = sheet[addr];
           const value = cell ? (XLSX.utils.format_cell(cell) ?? '') : '';
-          const styleIdx = typeof cell?.s === 'number' ? cell.s : 0;
+          const styleIdx = sheetStyleIndices.get(addr) ?? 0;
           const font = styleMap.get(styleIdx) ?? { bold: false, italic: false };
           row.push({ value, bold: font.bold, italic: font.italic });
         }
