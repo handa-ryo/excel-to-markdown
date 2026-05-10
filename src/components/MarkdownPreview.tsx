@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import styles from './MarkdownPreview.module.css';
 
 interface Props {
@@ -17,7 +18,7 @@ export default function MarkdownPreview({ markdown }: Props) {
       <div className={styles.pane}>
         <h3 className={styles.title}>プレビュー</h3>
         <div className={styles.rendered}>
-          <ReactMarkdown>{markdown}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
         </div>
       </div>
     </div>
